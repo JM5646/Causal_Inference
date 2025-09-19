@@ -1,0 +1,255 @@
+---
+title: 'Problem Set 2: Omitted Variable Bias and Fixed Effects'
+author: "Claire Duquennois"
+output:
+  pdf_document: default
+  html_document:
+    number_sections: yes
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+***NAME:__JOHN MORRIS_____________________***
+
+
+**Empirical Analysis using Data from Washington (2008, AER)**
+
+
+This exercise, like PS1, also uses data from Ebonya Washington's paper, "Female Socialization: How Daughters Affect their Legislator Father's voting on Women's Issues," published in the *American Economic Review* in 2008. This paper studies whether having a daughter affects legislator's voting on women's issues. 
+
+
+**Submission instructions:**
+
+1) Knit your assignment in PDF.
+
+2) **Assignment shell extra credit:** You will receive a little extra credit if your answers line up correctly with the answer positions of the template on gradescope. For this to work 
+
+- **Work by putting your answers directly into this R markdown file that is pre-formatted for you!**
+
+- Make sure you have ONE question and answer per page (this is how the template is structured and  allows gradescope to easily find your answers), unless the question indicated that the answer will require two pages because of large tables. 
+
+- Your final PDF should be 18 pages. 
+
+- You can insert needed page breaks as illustrated below
+
+- Make sure you do not "print" the data. If you change the data, make sure you store with a structure like: newname<-modification(olddata). If you only type modification(olddata), R will display the data rather than saving your modifications
+
+
+3) Upload your assignment PDF to gradescope.
+
+\pagebreak
+
+# Set up and opening the data
+## Question 1.1: 
+**Load the `basic.dta` file like you did for PS1 and call all the packages you will be using with the `library` function. The packages you will need are `haven`, `lfe`,  `dplyr`,  and `stargazer`.**
+
+
+**Code:**
+```{r}
+library(lfe)
+library(haven)
+library(dplyr)
+library(stargazer)
+basic_data<-read_dta("basic.dta")
+```
+
+\pagebreak
+# Cleaning the data
+## Question 2.1: 
+**Like in PS1, restrict your data to observations from the 105th congress and keep only the variables listed in the table below. Here too, make sure your final dataset is a data frame. **
+
+
+| Name     |Description                                                             |
+|----------|------------------------------------------------------------------------|
+|aauw	     |AAUW score                                                              | 
+|totchi	   |Total number of children                                                |
+|ngirls	   |Number of daughters                                                     |
+|party	   |Political party. Democrats if 1, Republicans if 2, and Independent if 3.|
+|female	   |Female dummy variable                                                   |
+|white	   |White dummy variable                                                    |
+|srvlng	   |Years of service                                                        | 
+|age	     |Age                                                                     |
+|demvote	 |State democratic vote share in most recent presidential election        |
+|rgroup    |religious group                                                         |
+|region    |region                                                                  |
+|name      |representative's name                                                                 |
+
+**You can find the detailed description of each variable in the original paper. The main variable in this analysis is `AAUW`, a score created by the American Association of University Women (AAUW). For each congress, AAUW selects pieces of legislation in the areas of education, equality, and reproductive rights. The AAUW keeps track of how each legislator voted on these pieces of legislation and whether their vote aligned with the AAUW’s position. The legislator’s score is equal to the proportion of these votes made in agreement with the AAUW.**
+
+Hint: You can use the `filter` and `select` functions we discussed in Slides2_IntroR.
+
+**Code**
+```{r}
+basic_data1<- filter(basic_data, congress == 105)
+basic_data1 <- basic_data1 %>%
+  select(aauw, totchi, ngirls, party, female, white, srvlng, age, demvote, rgroup, region, name) %>% 
+  as.data.frame()
+```
+
+
+
+
+\pagebreak
+# Analysis
+## Question 3.1: 
+**Estimate the following linear regression models using the `felm` command (part of the lfe package). Report your regression results in a formatted table using  `stargazer`. Report robust standard errors in your table.** 
+
+
+$$
+\begin{aligned}
+ \text{Model 1: }aauw_i&=\beta_0+\beta_1ngirls_i+\epsilon_i\\
+ \text{Model 2: }aauw_i&=\beta_0+\beta_1ngirls_i+\beta_2totchi+\epsilon_i\\
+\end{aligned}
+$$
+Hints: If you want RMarkdown to display your outputted table, include the code `results = "asis"` in the chunk header. This is true for all chunks that output a formatted table. In the stargazer command, you will want to specify the format of the table by including the code `type="latex"` for a pdf output. If you have trouble knitting to PDF, try installing MikTex (https://miktex.org/download). You will need to specify `se = list(reg1$rse, reg2$rse)` in stargazer, like the example in Slides3_RegressionReview.
+
+**Code:**
+```{r results = "asis"}
+model1<- felm(data=basic_data1, aauw~ngirls)
+model2<- felm(data=basic_data1, aauw~ngirls+totchi)
+
+stargazer(model1, model2, type = "latex", header = F, title = "Model Comparison", omit.stat= c("f", "ser"), se = list(model1$rse, model2$rse))
+```
+
+
+\pagebreak
+## Question 3.2: 
+
+**Compare the estimates of $\beta_1$ across the two specifications. Why does our estimate of $\beta_1$ changes so much? Which control variable is particularly important and why? **
+
+**Answer:**
+model1: aauw = 50.964 - 2.784(ngirls)
+
+model2: aauw = 59.982 + 5.776(ngirls) - 7.992(totchi) 
+
+OVB
+
+\pagebreak
+## Question 3.3: 
+**Consider the second specification which controls for $totchi_i$. Conditional on the number of children, do you think $ngirls_i$ is plausibly exogenous? What is the identifying assumption, i.e. the assumption that must hold for $\beta_1$ to be interpreted as a causal estimate? What evidence does Washington give to support this assumption?**
+
+**Answer:**
+Conditional on number of children, the number of girls is as good as random. The author convinces us that this is a legitimate assumption because it is unlikely that congress people are participating in 'stopping rules' with respect to number of children. Congress people do no have children until getting a child of a specific gender. since number of girls is as good as random there is a legitimate claim to causality between explanatory variable (ngirls) and dependent variable(aauw).
+\pagebreak
+# Fixed Effects:
+## Question 4.1 (2 pages): 
+**Equation 1 from Washington's paper is a little bit different from the equations you have estimated so far. Estimate the three models specified below (where $\gamma_i$ is a fixed effect for the number of children). Present your results in a table. Use robust standard errors.**
+
+$$
+\begin{aligned}
+  \text{Model 1: }aauw_i&=\beta_0+\beta_1ngirls_i+\beta_2totchi+\epsilon_i\\
+   \text{Model 2: }aauw_i&=\beta_0+\beta_1ngirls_i+\beta_2chi1+...+\beta_{10}chi10 +\epsilon_i\\
+    \text{Model 3: } aauw_i&=\beta_0+\beta_1ngirls_i+\gamma_i+\epsilon_i\\
+\end{aligned}
+$$
+
+Hints: 
+
+- you will need to generate the dummy variables for the second equation or code it as `factor(totchi)`. 
+
+- For the third equation, the `felm` function allows you to specify fixed effects as we saw in class. 
+
+**Code:**
+
+```{r}
+factotchi <-factor(basic_data1$totchi)
+
+reg1 <- felm(data=basic_data1, aauw~ngirls+totchi)
+reg2<- felm(data=basic_data1, aauw~ngirls+data)
+reg3<- felm(data=basic_data1, aauw~ngirls|totchi)
+
+stargazer(reg1, reg2, reg3, type="latex", omit.stat = c("ser", "f"), header= F, title= "Model Comparison", se = list(reg1$rse, reg2$rse, reg3$rse) )
+
+```
+
+
+
+\pagebreak
+## Question 4.2: 
+**Explain the difference between the three models.**
+
+**Answer:**
+in model 2, individual control variables account for the fixed effects being used in model 3. the fixed effect in model 3 is totchi, totchi is divided into individual control variables. In model 1, totchi is taken as given. the approach in model1 does not account for variation within groups.
+
+
+\pagebreak
+## Question 4.3 (2 pages): 
+**Reproduce the EXACT results presented in column 2 of table 2 from Washington's paper. To do this you will need to first build three variables: $age^2$ and $srvlng^2$ and $repub_i$, an indicator set to 1 if the representative is republican and 0 otherwise.  Then estimate the following specification, where $\gamma_i$ is a fixed effect for total children, $\phi_i$ is a fixed effect for religious group, and $\lambda_i$ is a fixed effect for region:**
+
+$$
+\text{Model A: }aauw_i=\beta_0+\beta_1ngirls_i+female_i+white_i+repub_i+age_i+age^2_i+srvlng_i+srvlng^2_i+demvote_i+\gamma_i+\phi_i+\lambda_i+\epsilon_i
+$$
+Hint: 
+
+- Because you are using a fixed effect for religion, stargazer will not print the religion coefficients. That is ok, those coefficients are still being estimated in the background of the R program. 
+
+- Do not use robust standard errors as she does not in this table. 
+
+**Code:**
+```{r}
+basic_data1$age2 <- basic_data1$age^2
+basic_data1$srvlng2 <- basic_data1$srvlng^2
+basic_data1$repub_i <- ifelse(basic_data1$party==2,1,0)
+reg_1 <- felm(data=basic_data1, aauw~ngirls+female+white+repub_i+age+age2+srvlng+srvlng2+demvote|totchi+rgroup+region)
+stargazer(reg_1, type = "latex", omit.stat = c("ser", "f"), header= F, title= "Big-Time regression")
+```
+
+
+
+\pagebreak
+## Question 4.4: 
+**Explain what the region fixed effects are controlling for.**
+
+**Answer:**
+The region fixed effect is controlling for changes that affected all regions within a group. If a shock occurred which affected the dependent variable (aauw) across all regions, the region fixed effect will account for it.
+
+\pagebreak
+## Question 4.5: 
+**Reload the data and this time keep observations from all of the four congresses. Add the three variables you built for question 4.3 to this data set**
+
+**Code:**
+```{r}
+basic_data <- read_dta("basic.dta")
+data<- rename(basic_data)
+data$age2 <- data$age^2
+data$srvlng2 <- data$srvlng^2
+data$repub_i <- ifelse(data$party ==2,1,0)
+```
+
+\pagebreak
+## Question 4.6 (2 pages): 
+**Because we have data for four congress sessions, we may be able to see how an individual congress person's voting patterns change as the number of daughters they have changes. Estimate model A with the addition of `congress` and `name` fixed effects. Present your results in a table.** 
+
+**Code:**
+```{r}
+model_A <- felm(data=data, aauw~ngirls+female+white+repub_i+age+age2+srvlng+srvlng2+demvote|totchi+rgroup+region+congress+name)
+stargazer(model_A, type = "latex", omit.stat = c("ser", "f"), header= F, title= "Big-Time regression with congress and name fixed")
+```
+
+
+\pagebreak
+## Question 4.7: 
+**How does this estimate compare to your estimate in question 4.3? Why are the standard errors so much bigger? Why doesn't Washington use this approach in her paper?** 
+
+**Answer:**
+This new linear model has produced estimates which are smaller that the linear model produced from only the 105 congress. TYhe standard errors are larger because the number of variables has increased. Washington does not use this model because it does not address her research question. This new model accounts for particular congress people. Washington is interested in ngirls on aauw. 
+
+\pagebreak
+## Question 4.8:
+**Why are you not able to generate a coefficient for $female_i$ or $white_i$?** 
+
+**Answer:**
+Fixed effects account for change in data over time. The categories female, and white, do not change over time. Since the categories do not change over time, there is no fixed effect.
+
+\pagebreak
+## Question 4.9: 
+**You are able to generate an estimate for $repub_i$. What does this imply?** 
+
+**Answer:**
+At least one congress person changed political affiliation within the data.
+
+
+
+

@@ -1,0 +1,626 @@
+---
+title: 'ECON 1190 Problem Set 5: Difference in Differences'
+author: "Claire Duquennois"
+date: ""
+output:
+ pdf_document:
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+**Name:**
+
+
+
+# Empirical Analysis from Lucas Davis' (2004, American Economic Review)
+
+
+This exercise uses data from Lucas Davis' paper, "The Effect of Health Risk on Housing Values: Evidence from a Cancer Cluster," published in the *American Economic Review* in 2004. This paper studies the effects of the emergence of a child cancer cluster on housing prices to estimate the willingness to pay to avoid this environmental health risk. 
+
+The data can be found by following the link on the AER's website which will take you to the ICPSR's data repository, or on the class canvas page. 
+
+
+**Submission instructions:**
+
+1) Knit your assignment in PDF.
+
+2) **Assignment shell extra credit:** You will receive a little extra credit if your answers line up correctly with the answer positions of the template on gradescope. For this to work 
+
+- **Work by putting your answers directly into this R markdown file that is pre-formatted for you!**
+
+- Make sure you have ONE question and answer per page (this is how the template is structured and  allows gradescope to easily find your answers), unless the question indicated that the answer will require two pages because of large tables. 
+
+- Your final PDF should be 27 pages. 
+
+- You can insert needed page breaks as illustrated below
+
+- Make sure you do not "print" the data. If you change the data, make sure you store with a structure like: newname<-modification(olddata). If you only type modification(olddata), R will display the data rather than saving your modifications
+
+
+3) Upload your assignment PDF to gradescope.
+
+
+\pagebreak
+
+\pagebreak
+# Set Up
+## Loading the Packages
+
+Load any R packages you will be using:
+
+**Code:**
+```{r}
+library(haven)
+library(dplyr)
+library(stargazer)
+library(lfe)
+library(ggplot2)
+library(lubridate)
+```
+
+
+
+
+
+\pagebreak
+
+## Cleaning and constructing the data
+
+Thus far in the course the datasets we have been working with were already assembled and cleaned. When doing econometric analysis from scratch, finding, cleaning and compiling the datasets constitutes much of the work. For this project we will do a little bit more of this prior to analysis since the replication files are much more "raw" then for the other papers we have replicated. 
+
+The main datasets used in the analysis consist of four files: two listing information on real estate sales in Churchill county and two listing real estate sales in Lyons county. The variables in these four files are not all coded and labeled in the same way so we need to synchronize them. 
+
+To save you time and busywork, the 3 code chunks below synchronize three of the four raw data files. You will synchronize the last raw data file and merge it in. 
+
+**File 1:**
+
+```{r setup1}
+
+#Opening the `cc.dta` file which contains home sales records for Churchill County. 
+
+temp1<-read_dta("cc.dta")
+temp1<-as.data.frame(temp1)
+
+#Rename and keep only the needed variables
+temp1<-temp1 %>% 
+  rename(
+    parcel=var1,
+    date=var3,
+    usecode=var10,
+    sales=var16,
+    acres=var17,
+    sqft=var19,
+    constryr=var20
+    )
+
+temp1<-temp1[, c("parcel","date","usecode","sales","acres","sqft","constryr")]
+
+# limiting observations to those where
+# 1) the sales date is reported 
+# 2) is in the time period we are interested in (date<=20001300) 
+# 3) is for the type of property we are interested in, which will have a usecode of 20.
+
+temp1<-temp1[!is.na(temp1$date),]
+temp1<-temp1[temp1$usecode==20,]
+temp1<-temp1[temp1$date<=20001300,]
+
+# generate two new variables: a Churchill county indicator, cc and a Lyon County indicator, lc.
+temp1$cc<-1
+temp1$lc<-0
+```
+
+\pagebreak
+
+**File 2:**
+```{r setup2}
+
+#Opening the `lc.dta` file which contains home sales records for Lyons County. 
+
+temp3<-read_dta("lc.dta")
+temp3<-as.data.frame(temp3)
+
+#Rename and keep only the needed variables
+
+temp3<-temp3 %>% 
+  rename(
+    parcel=var1,
+    date=var2,
+    usecode=var3,
+    sales=var4,
+    acres=var5,
+    sqft=var6,
+    constryr=var7
+    )
+
+temp3<-temp3[, c("parcel","date","usecode","sales","acres","sqft","constryr" )]
+
+# limiting observations to those where
+# 1) the sales date is reported 
+# 2) is in the time period we are interested in (date<=20001300) 
+# 3) is for the type of property we are interested in, which will have a usecode of 20.
+
+temp3<-temp3[!is.na(temp3$date),]
+temp3<-temp3[temp3$usecode==20,]
+temp3<-temp3[temp3$date<=20001300,]
+
+# generate two new variables: a Churchill county indicator, cc and a Lyon County indicator, lc.
+temp3$cc<-0
+temp3$lc<-1
+
+
+```
+\pagebreak
+
+**File 3:**
+                                     
+```{r code13}
+
+#Opening the `lc2.dta` file which contains home sales records for Lyons County. 
+
+temp4<-read_dta("lc2.dta")
+temp4<-as.data.frame(temp4)
+
+#Rename variables
+temp4<-temp4 %>% 
+  rename(
+    parcel=var1,
+    date=var2,
+    sales=var3,
+    acres=var4,
+    sqft=var5,
+    constryr=var6
+    )
+
+# generate two new variables: a Churchill county indicator, cc and a Lyon County indicator, lc.
+temp4$cc<-0
+temp4$lc<-1
+
+#set the usecode for these data to 20 for all observations
+temp4$usecode<-20
+
+
+# limiting observations to those where
+# 1) the sales date is reported 
+# 2) is in the time period we are interested in (date<=20001300) 
+
+temp4<-temp4[!is.na(temp4$date),]
+temp4<-temp4[temp4$date>=20001300,]
+
+#keep only the needed variables
+temp4<-temp4[, c("parcel","date","usecode","sales","acres","sqft","constryr","cc","lc" )]
+```                
+
+**Merging together the three cleaned files.** 
+
+```{r codebind}
+temp<-rbind(temp1, temp3, temp4)
+rm(temp1, temp3, temp4)
+
+``` 
+
+
+\pagebreak
+### **Question: Let's clean the `cc2.dta` file. We need to make this set of sales records compatible with the other three sets of sales records we just cleaned and merged.** 
+
+**1) First, load the data and rename the relevant columns so that the names match up and keep the listed variables (see the table below).**
+
+**2) generated two new variables: `cc` which will be equal to 1 for all observations since this is Churchill county data and `lc` which will equal 0 for all observations**
+
+|Old  Name  |New Name      |Description                                       |
+|-----------|--------------|--------------------------------------------------|
+|parcel__   |parcel        |Parcel identification number                      |
+|sale_date  |date          |Sale date                                         |
+|land_use   |usecode       |Land use code                                     |
+|sales_price|sales         |Sale price                                        |
+|acreage    |acres         |Acres                                             |
+|sq_ft      |sqft          |Square Footage                                    |
+|yr_blt     |constryr      |Year constructed                                  |
+
+
+**Code:**
+```{r}
+temp5<-read_dta("cc2.dta")
+temp5<-as.data.frame(temp5)
+temp5 <- temp5 %>% 
+  rename(
+    parcel=parcel__,
+    date=sale_date,
+    usecode=land_use,
+    sales=sales_price,
+    acres=acreage,
+    sqft=sq_ft,
+    constryr=yr_blt
+  )
+temp5$cc<-1
+temp5$lc<-0
+```
+
+
+
+
+\pagebreak
+### **Question: Compare the formatting of the date variable in the data you are cleaning and the `temp` file you will be merging it with. What do you notice? How is the date formatted in the `temp` dataset and how is it formatted in the one you are cleaning?**
+
+**Answer:**
+temp5 date = mmddyy, cleaned data (temp) date = yyyymmdd. the date format is different.
+\pagebreak
+### **Question: Convert the dates in the data you are cleaning to the format used in `temp` (YYYYMMDD).**
+
+Hint: there are many different ways to do this. There are functions and packages for date conversions. Or you can use a "brute force" approach that pulls out the correct values for day, month, and year and reorganizes them. ( e.g. `temp2$month=trunc(temp2$date/10000)`)
+
+**Code:**
+```{r}
+mmddyy_dates <- temp5$date 
+
+
+parsed_dates <- mdy(mmddyy_dates)
+
+# Format Date to yyyymmdd
+yyyymmdd_dates <- format(parsed_dates, "%Y%m%d")
+
+temp5 <- temp5 %>%
+  mutate(yyyymmdd_dates = format(mdy(mmddyy_dates), "%Y%m%d"))
+
+#Remove inital date variable
+temp5$date <- NULL
+
+#rename to date
+temp5 <- temp5 %>% 
+  rename(date=yyyymmdd_dates)
+
+rm(mmddyy_dates, parsed_dates, yyyymmdd_dates)
+
+temp5 <- temp5 %>% select(-class)
+```
+
+
+\pagebreak
+### **Question: Limit your observations to observations where (date>=20001300) and observations where the sales date is reported. Then  merge your data to the `temp` file.**
+**Code:**
+```{r}
+temp5<-temp5[temp5$date>=20001300,]
+temp<-rbind(temp, temp5)
+rm(temp5)
+```
+
+
+\pagebreak
+### **Question: Now that we have merged the four files of sales data, we need to create some additional variables and do some further data cleaning. Generate the following seven variables:**
+- A variable with the sales year
+
+- A variable with the sales month 
+
+- A variable with the sales day
+
+- A variable for the age of the home
+
+- The log nominal sales price.
+
+- The quarter (1-4) within the year
+
+
+**Code:**
+```{r}
+temp <- temp %>%
+  mutate(
+    # Parse the date into a proper date object
+    sale_date = ymd(date),
+    
+    # Extract year, month, and day
+    sales_year = year(sale_date),
+    sales_month = month(sale_date),
+    sales_day = day(sale_date),
+    
+    # Calculate the age of the home
+    home_age = sales_year - constryr,
+    
+    # Calculate the log nominal sales price
+    log_sales = log(sales),
+    
+    # Determine the quarter of the sale
+    sales_quarter = quarter(sale_date)
+  ) 
+```
+
+
+
+
+
+\pagebreak
+### **Question: We now want to check that all the observations in the data make sense and are not extreme outliers and re-code any variables with inexplicable values.**
+
+**Drop the following observations:**
+
+- If the sale price was 0.
+
+- If the home is older then 150
+
+- If the square footage is 0.
+
+- If the square footage is greater than 10000.
+
+- If if date is after Sept. 2002 since that is when the data was collected.
+
+- If the month is 0. 
+
+**Re-code the following observations:**
+
+- If the age of the home is negative, replace with 0.
+
+- If the day is 32 replace with 31.
+
+**We also want to make sure there are no duplicate sales records in the data. Drop the duplicate of any observation that shares the same parcel number and sales date, or that shares the same sales price, date, cc, and acres. **
+
+Hint: `distinct()` may be useful.
+
+**Code:**
+```{r}
+temp<- temp %>% 
+  filter(
+    sales != 0,                                    # Drop sale price = 0
+    home_age <= 150,                                # Drop home age > 150
+    sqft != 0,                                     # Drop sqft = 0
+    sqft <= 10000,                                  # Drop sqft > 10000
+    sale_date <= ymd("2002-09-30"),                 # Drop sales date after Sept. 2002
+    sales_month != 0                               # Drop month = 0
+  )
+temp <- temp %>%
+  mutate(
+    home_age = ifelse(home_age < 0, 0, home_age),   # Replace negative home age with 0
+    sales_day = ifelse(sales_day == 32, 31, sales_day) # Replace day 32 with 31
+  ) 
+
+temp <- temp %>%   
+  distinct(parcel, sale_date, .keep_all = TRUE) %>%  
+  distinct(sales, sale_date, cc, acres, .keep_all = TRUE)
+
+```
+
+
+
+
+\pagebreak
+### **Question: Lyons and Churchill counties could be using the same parcel numbers for different parcels in each county (ie they may each have a parcel identified as 205 within their separate systems). Modify the parcel variable so parcel numbers are uniquely identified. **
+
+**Code:**
+```{r}
+temp <- temp %>%
+  mutate(
+    parcel = paste0(ifelse(cc == 0, "L", "C"), "_", parcel)
+  )
+
+```
+
+
+\pagebreak
+### **Question: We want to adjust the sales price using the Nevada Home Price Index (`nvhpi`) which is available for each quarter in the `price.dta` file. Merge the index into your dataset and calculate the index adjusted real sales price ($\frac{salesprice*100}{nvhpi}$) as well as the log of this real sales price. What is the base year and quarter of this index?**
+
+**Code:**
+```{r}
+nvhpi <- read_dta("price.dta")
+nvhpi <- as.data.frame(nvhpi)
+
+temp <- temp %>%
+  left_join(nvhpi, by = c("sales_year" = "year", "sales_quarter" = "quarter"))
+```
+
+
+**Answer:**
+
+\pagebreak
+### **Question: In the paper, Davis maps the cumulative number of leukemia cases that occur in Churchill county in figure 1. For simplicity, we assume a binary treatment: the cancer cluster did not affect outcomes prior to 2000 and did after. Generate a "Post" indicator for years after 1999.**
+
+**Code:**
+```{r}
+temp <- temp %>%
+  mutate(Post = ifelse(sales_year > 1999, 1, 0))
+
+```
+
+
+
+\pagebreak
+# Summary Statistics: 
+
+## **Question: Create a table comparing baseline characteristics for four variable between Lyon and Churchill prior to 2000. What do these regressions tell you and why they are important?**
+
+**Code:**
+```{r results='asis'}
+temp_pre <- temp %>%
+  filter(sales_year < 2000)
+reg1<- lm(sales ~ cc, temp_pre)
+reg2<- lm(nvhpi ~ cc, temp_pre)
+reg3<- lm(acres ~ cc, temp_pre)
+reg4<- lm(sqft ~ cc, temp_pre)
+
+stargazer(reg1, reg2, reg3, reg4, type = "latex", header = FALSE, title = "Basic Summary", omit.stat = c("f", "ser"), covariate.labels = c("churchill", "lyon"))
+```
+
+**Answer:**
+
+
+\pagebreak
+# Analysis: 
+
+## **Question: Specify and then estimate the standard difference-in-differences estimator to look at how home sales prices changed between Churchill and Lyons county after the emergence of the cancer cluster. Estimate your specification on the log of real home sales and the sales price. (2 pages) **
+
+Note: Your results will not exactly match the values in the paper. His approach is more specific. We model the
+risk perception of the cancer cluster as a [0, 1] variable: 0 prior to 1999 and 1 after. In the paper,
+he allows for the perceived risk to increase over the time window in which cases were growing, by using the
+spline function illustrated in figure 1 which creates more variation and detail in the data.
+
+**Answer:**
+The difference in difference estimator is captured by B3. B3 will be the coefficient of the interaction term (Churchill county * post treatment). 
+
+**Code:**
+```{r results='asis'}
+dnds<- lm(sales ~ Post + cc + (Post*cc), data = temp)
+dndls<- lm(log_sales ~ Post + cc + (Post*cc), temp)
+stargazer(dnds, dndls, type = "latex", header = FALSE, title = "Basic Summary", omit.stat = c("f", "ser")
+          )
+```
+
+\pagebreak
+
+## **Question: Which table in the paper reports equivalent results?**
+
+**Answer:**
+Table 2 
+\pagebreak
+## **Question: Interpret each of the coefficients you estimated in the regression using the log real sales.**
+
+**Answer:**
+B0 = the effect of being in lyons county before the cancer event on log sales
+B0 + B1 = effect of being in lyons county after cancer event on log sales
+B0 + B1 + B2 + B3 = effect of being in churchill county, before cancer, on log sales
+B0 + B2 + B3 = effect of being in churchill county, after cancer, on log sales.
+\pagebreak
+## **Question: Use the estimated coefficients for the effect on the sales price to report the estimated sales price in each of the situations below. Show your calculations.**
+
+|           |Lyon County                     |Churchill County                            |
+|-----------|--------------------------------|--------------------------------------------|
+|Year<=1999 |                                |                                            |
+|Year>1999  |                                |                                            | 
+
+**Answer:**
+(lc, y<= 1999) = b0 = 11.519
+(lc, y > 1999) = b0 + b1 = 11.751
+(cc, y > 1999) = b0 + b2 + b3 = 11.399
+(cc, y<= 1999) = b0 + b1 + b2 + b3 = 11.631
+
+\pagebreak
+## **Question: What assumption must hold for us to be able to attribute the estimated effect as the causal effect of the cancer cluster? Do you find the evidence convincing in this case?**
+
+**Answer:**
+The parallel trends assumption must hold for us to believe the causal effect of b3. Table 2 demonstrated that before the cluster basic statistics were similar across counties. After the event of a cancer cluster B3 is non zero and statistically significant. 
+\pagebreak
+## **Question: Re-estimate both your regressions above but with the addition of parcel fixed effects. What concerns does the addition of parcel fixed effects help address? What is the drawback of using this specification?   **
+**Code:**
+```{r results='asis'}
+dndsfe<- felm(sales ~ Post + cc + (Post*cc)|parcel|0|0, data = temp)
+dndlsfe<- felm(log_sales ~ Post + cc + (Post*cc)|parcel|0|0, temp)
+
+stargazer(dndsfe, dndlsfe, type = "latex", header = FALSE, title = "Basic Summary",
+          omit.stat = c("f", "ser")
+          )
+
+```
+
+**Answer:**
+Parcel fixed effects will account for any time invariant un-observable variables that happen within a parcel.
+
+This doesnt really contribute to our estimation because a parcel of land is either in one county or the other. 
+
+\pagebreak
+## **Question: In order to better asses how home prices in Churchill and Lyon counties compare to each other over time, calculate the average price of sold homes in each county for 7 two year bins of the data (bin the years 90 and 91 together, 92 and 93 together, ...).   Plot the evolution of this average for the two counties on the same graph. Include bars to indicate the confidence interval of the calculated means. (2 pages) **
+
+Hint: You want a plot that looks something like the third set of graphs on the following page: http://www.sthda.com/english/wiki/ggplot2-error-bars-quick-start-guide-r-software-and-data-visualization
+
+**Code:**
+```{r}
+temp <- temp %>%
+  mutate(
+    year_bin = case_when(
+      sales_year %in% 1990:1991 ~ "1990-1991",
+      sales_year %in% 1992:1993 ~ "1992-1993",
+      sales_year %in% 1994:1995 ~ "1994-1995",
+      sales_year %in% 1996:1997 ~ "1996-1997",
+      sales_year %in% 1998:1999 ~ "1998-1999",
+      sales_year %in% 2000:2001 ~ "2000-2001",
+      sales_year %in% 2002:2003 ~ "2002-2003",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(year_bin))  
+
+temp <- temp %>%
+  mutate(
+    county = case_when(
+      cc == 1 ~ "Churchill",
+      lc == 1 ~ "Lyon",
+      TRUE ~ "Unknown"  
+    )
+  )
+
+summary_data <- temp %>%
+  group_by(county, year_bin) %>%
+  summarise(
+    mean_price = mean(sales, na.rm = TRUE),
+    sd_price = sd(sales, na.rm = TRUE),
+    n = n(),
+    ci_lower = mean_price - qt(0.975, df = n - 1) * (sd_price / sqrt(n)),
+    ci_upper = mean_price + qt(0.975, df = n - 1) * (sd_price / sqrt(n)),
+    .groups = "drop"  # Avoids grouping issues
+  )
+```
+```{r results='asis'}
+ggplot(summary_data, aes(x = year_bin, y = mean_price, color = county, group = county)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.2) +
+  labs(
+    title = "Average Home Prices in Churchill and Lyon Counties (1990-2003)",
+    x = "Two-Year Bins",
+    y = "Average Sales Price",
+    color = "County"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+\pagebreak
+## Question: Using the bins of two years constructed above, estimate an event study specification using the 98-99 bin as your omitted category. That is estimate the specification below and present your results in a table. (2 pages) 
+
+$$
+logrealsales_{icb}=\sum_{b=-98/99}^7\beta_{b}Bin_b \times ChurchillCo_c+\lambda_b+\gamma_c+u_{it}.
+$$
+```{r}
+temp <- temp %>%
+  mutate(
+    year_bin = factor(year_bin, levels = c(
+      "1998-1999", "1990-1991", "1992-1993", "1994-1995", "1996-1997", 
+      "2000-2001", "2002-2003"
+    ))
+  )
+temp <- temp %>%
+  mutate(interaction = as.numeric(year_bin) * cc)
+
+temp <- temp %>%
+  mutate(logrealsales = log(sales / 100)) 
+
+model <- felm(
+  logrealsales ~ interaction | year_bin + cc | 0 | 0,
+  data = temp)
+  
+  stargazer(model,
+          title = "Event Study Results",
+          align = TRUE,
+          dep.var.labels = "Log Real Sales",
+          covariate.labels = c("Interaction Terms (Bin × Churchill County)"),
+          omit = "year_bin|cc",
+          type = "latex")
+```
+
+\pagebreak
+## Question: Use your results to plot an event study figure of your estimates showing your estimated coefficients and 95\% confidence level intervals around them. 
+
+Hint: see the code used in the lecture slides for retreiving and plotting coefficient estimates. 
+```{r}
+p <- ggplot(temp, aes(x=interaction, y=log_sales)) + 
+    geom_dotplot(binaxis='y', stackdir='center')
+p
+```
+
+
+\pagebreak
+## Question: What patterns are we looking for in the two graph you just produced?
+
+**Answer:** 
+Forgive me, My last graph is certainly wrong. But I think I should be seeing that the parallel trends assumption holds.
+
+

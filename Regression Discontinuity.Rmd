@@ -1,0 +1,393 @@
+---
+title: 'ECON 1190 Problem Set 6: Regression Discontinuity'
+author: "Claire Duquennois"
+date: ""
+output:
+ pdf_document:
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+***Name:***
+
+
+
+# Empirical Analysis using Data from Manacorda, Miguel, & Vigorito (2011, American Economic Journal: Applied Economics)
+
+
+This exercise uses data from Manacorda, Miguel, & Vigorito's paper, "Government Transfers and Political Support," published in the *American Economic Journal: Applied Economics* in 2011. This paper studies how receipt of a government anti-poverty cash transfer changes how beneficiary households support and view the government. 
+
+The data can be found on Edward Miguel's faculty website. Download and extract the contents from the `Government_Transfers_replication.zip` file. 
+
+
+
+**Submission instructions:**
+
+1) Knit your assignment in PDF.
+
+2) **Assignment shell extra credit:** You will receive a little extra credit if your answers line up correctly with the answer positions of the template on gradescope. For this to work 
+
+- **Work by putting your answers directly into this R markdown file that is pre-formatted for you!**
+
+- Make sure you have ONE question and answer per page (this is how the template is structured and  allows gradescope to easily find your answers), unless the question indicated that the answer will require two pages because of large tables. 
+
+- Your final PDF should be 25 pages. 
+
+- You can insert needed page breaks as illustrated below
+
+- Make sure you do not "print" the data. If you change the data, make sure you store with a structure like: newname<-modification(olddata). If you only type modification(olddata), R will display the data rather than saving your modifications
+
+
+3) Upload your assignment PDF to gradescope.
+
+
+\pagebreak
+
+
+# Set up and constructing the data
+
+The original data used in the paper is confidential. The authors instead provide the `reg_panes.dta` data file which is anonymized and created from the original data. 
+
+## Question: Loading the Packages
+
+Load any R packages you will be using:
+
+**Code:**
+```{r}
+library(haven)
+library(dplyr)
+library(stargazer)
+library(lfe)
+library(ggplot2)
+library(lubridate)
+```
+
+
+
+
+
+\pagebreak
+
+## Question: Open the `reg_panes.dta` file. To complete this problem set you will need the following variables from this data file: 
+
+| Name            |Description                                        |
+|-----------------|---------------------------------------------------|
+|aprobado         |Ever received PANES 2005-2007                      |
+|untracked07      | Untracked in 2007                                 |
+|h_89             |Supports current government 2007 [1 to 3]|         |
+|hv34             |Supports current government 2008 [1 to 3]|         | 
+|ind_reest        |Predicted Income                                   | 
+|newtreat         |PANES eligibility                                  |
+
+
+
+Drop all other variables. If needed, give the variables you are keeping more intuitive names. 
+
+
+**Code:**
+```{r}
+panes<- read_dta("reg_panes.dta")
+panes <- panes %>% select(aprobado, untracked07, h_89, hv34, ind_reest, newtreat)
+panes<- rename(panes, get_panes = aprobado, scg7 = h_89, scg8 = hv34, predinc = ind_reest)
+```
+
+
+\pagebreak
+
+## **Question: The data as downloaded will require that you clean the variables of interest and construct a new dataset to generate the graphs. Start by generating the following cleaned variable:**
+
+-An indicator for receiving PANES that is NA if a respondent is untracked in 2007
+
+**Code:**
+```{r}
+panes$untr_i <- ifelse(panes$get_panes == 1 & panes$untracked07 == 1, NA, panes$get_panes)
+
+```
+
+
+\pagebreak
+
+## **Question: We are going to re-scale the variables that indicate support for the current government so that responses range from 0 to 1. To do this, tabulate the current variable to see how it is distributed and then generate a variable that will be NA if it is currently coded as 9, 0 if currently 2, 0.5 if currently 1 and 1 if currently 3. Do this for both the 2007 and 2008 variable. **
+
+Note: This is how the authors modify this variable in their code. It seems counter intuitive and does not correspond to the description of how this variable is coded in the survey questionnaire as reported in their appendix though it does correspond to their discussion in footnote 12. My guess is the transcription/translation of the survey question is incorrect.
+
+**Code:**
+```{r}
+table(panes$scg7)
+panes$scg7_norm <- ifelse(panes$scg7 == 9, NA,
+                        ifelse(panes$scg7 == 2, 0,
+                        ifelse(panes$scg7 == 1, 0.5,
+                        ifelse(panes$scg7 == 3, 1, NA))))
+table(panes$scg7_norm)
+table(panes$scg8)
+panes$scg8_norm <- ifelse(panes$scg8 == 9, NA,
+                          ifelse(panes$scg8 == 2,0,
+                          ifelse(panes$scg8 == 1, 0.5,
+                                 ifelse(panes$scg8 == 3,1, NA))))
+table(panes$scg8_norm)
+```
+
+
+\pagebreak
+
+## **Question: Generate a variable that is the square of predicted income.**
+
+**Code:**
+```{r}
+panes$predinc2 <- (panes$predinc)^2
+```
+
+\pagebreak
+
+# We start by reproducing the main figures (2, 3,and 4) of the paper as good figures are key to any regression discontinuity paper.
+
+
+## **Question: The data consists of over 3000 observations. How many points are plotted on these figures? How should we interpret the y axis? How many points are plotted below the threshold? How many points are plotted above the threshold?**
+
+**Answer:**
+Since there are approximately
+twice as many households to the left of the eligibility threshold (i.e., the PANES eli-
+gible households) as to the right, we present twice as many cells for eligible house-
+holds (30) as for ineligible ones (15), such that each cell contains approximately
+the same number of observations (43 households). The Y-axis is Eligibility
+
+\pagebreak
+
+## **Question: Why is the number of points above the threshold different from the number below? **
+
+**Answer:**
+because there are twice as many households to the left of the eligibility threshold.
+\pagebreak
+
+
+## **Question: Replicating these figures will require restructuring our data and calculating the values that are plotted. Generate a variable that will indicate the percentile group the observation is in. Note the difference in the number of percentile groups above and below the threshold. **
+
+Hint: you may find the `xtile` function in R useful. Use it to split the sample below the threshold into 30 bins. Then split the sample at or above the threshold into 15 bins. The make sure the bin numbers above and below the threshold are not repeated and will be ordered correctly.
+
+**Code:**
+```{r}
+c<-0
+panes <- panes %>%
+  mutate(
+    bin_below = ifelse(predinc < c, ntile(predinc[which(predinc < c)], 30), NA),
+    bin_above = ifelse(predinc >= c, ntile(predinc[which(predinc >= c)], 15), NA),
+    bin = ifelse(!is.na(bin_below), bin_below, 
+                 ifelse(!is.na(bin_above), bin_above + 30, NA))
+  )
+```
+
+\pagebreak
+
+
+## **Question: For each of the percentile groups, calculate the mean of each of the variables we will use for plotting: predicted income, receipt of PANES, support for the government in 2007, and support for the government in 2008.**
+
+**Code:**
+```{r}
+means_by_bin <- panes %>%
+  group_by(bin) %>%
+  summarize(
+    mean_predinc = mean(predinc, na.rm = TRUE),
+    mean_get_panes = mean(get_panes, na.rm = TRUE),
+    mean_scg7 = mean(scg7_norm, na.rm = TRUE),
+    mean_scg8 = mean(scg8_norm, na.rm = TRUE), numb=n()
+  )
+means_by_bin$bin <- as.numeric(as.character(means_by_bin$bin))
+```
+
+
+
+\pagebreak
+
+
+## **Question: Replicate figure 2. Make the figure as clear and informative as possible. You may want to create an indicator variable for percentiles above and below the threshold. ** 
+
+**Code:**
+```{r}
+plot1 <- ggplot(means_by_bin, aes(x = bin, y = mean_get_panes)) +
+  geom_point() +  
+  geom_vline(xintercept = 30 )+
+  theme_minimal()
+plot1
+```
+
+
+\pagebreak
+
+
+## **Question: What is the purpose of this figure and what should we take away from it? **
+
+**Answer:**
+This figure shows the selection into treatment. All values below the threshold are selected in. No values above the threshold are selected.
+\pagebreak
+
+## **Question: Replicate figures  3 and 4. Make these figures as clear and informative as possible (2pages).  **
+
+```{r}
+plotscg7<- ggplot(means_by_bin, aes(x=bin, y=mean_scg7))+
+  geom_point()+
+  geom_vline(xintercept = 30
+             )
+plotscg7
+```
+```{r}
+plotscg8<- ggplot(means_by_bin, aes(x=bin, y=mean_scg8))+
+  geom_point()+
+  geom_vline(xintercept = 30
+             )
+plotscg8
+```
+
+
+\pagebreak
+
+
+## **Question: Interpret these figures. What should we take away from them? **
+
+**Answer:** 
+The first graph compares support for current government in 2007 above and below the threshold. The second graph does the same for 2008. They both demonstrate that individuals who received panes have higher support for the government.
+\pagebreak
+
+
+## **Question: Replicate the results of the three regressions estimated in the first column of table 1. Present your results in a table. Interpret the coefficients.**
+
+**Code:**
+```{r results='asis'}
+reg1<- lm(data=panes, get_panes~newtreat)
+reg2<-lm(data=panes, scg7_norm~newtreat)
+reg3<-lm(data=panes,scg8_norm~newtreat)
+stargazer(reg1,reg2,reg3, type="latex", header = T, 
+           omit.stat= c("f", "ser"))
+```
+
+**Answer:**
+Since the program was enforced by law, of course eligibility and receiving panes is nearly 1. For the others, receiving panes increased support for government in 2007 and 2008 by 12.9% and 11.8% respectively. 
+\pagebreak
+
+
+## **Question: Write down the specifications used in row 2 of columns 1,2 and 3 of table 1. **
+
+**Answer:**
+row 2 is support in 2007. newtreat = eligibility
+scg7 = B0 + 0.129*newtreat + error
+
+scg7 = B0 + B1*newtreat + B2*predinc + B3*(newtreat*predinc)+error
+
+scg7 = B0+B1*newtreat + B2*predinc + B3*Predinc2 + B4*(newtreat*predinc*predinc2)+error
+
+\pagebreak
+
+
+## **Question: Replicate the results reported in row 2 of Table 1 columns 1, 2 and 3. Explain the difference between these specifications and interpret their coefficients. (2 pages)**
+Hint: the variables listed in the table above after newtreat are the controls you will want to include.
+
+**Code:**
+```{r results='asis'}
+reg4<- felm(scg7_norm~ newtreat + predinc + newtreat*predinc, panes)
+reg5<- felm(scg7_norm ~ newtreat + predinc+ predinc2+ newtreat*predinc*predinc2,panes)
+stargazer(reg4,reg5, type="latex", header = T, 
+           omit.stat= c("f", "ser"))
+
+```
+
+
+**Answer:**
+reg4: B0 = (intercept of support for non eligible people)
+      B1 = (effect of eligibility on government support)
+      B2 = (effect of income on support for government for non eligible homes )
+      B3 = (interaction demonstrates how support changes as income increases)
+
+
+
+\pagebreak
+
+
+## **Question: What is the point of including all of these specifications?**
+
+**Answer:**
+These specifications provide for both a linear and a quadratic explanation of the dependent variable.By comparing the coefficients and varifying their similarity, these additional regressions improve the robustness of our design. 
+\pagebreak
+
+
+## **Question: Using the coefficients estimated above, write out the function you would use to predict the probability a household supports the current government based on their predicted income score: **
+
+**a) If they are eligible for the transfer using the results from column 1.**
+
+**b) If they are not eligible for the transfer using the results from column 1.**
+
+**c) If they are eligible for the transfer using the results from column 2.**
+
+**d) If they are not eligible for the transfer using the results from column 2.**
+
+**e) If they are eligible for the transfer using the results from column 3.**
+
+**f) If they are not eligible for the transfer using the results from column 3.**
+
+**Answer:**
+a) scg7= 0.772 + 0.129
+b) scg7 = 0.772
+c) scg7= 0.772 + 0.110 -0.011(predinc)      -1.916(newtreat:predinc)
+d) scg7= 0.772 - 0.011
+e) scg7 = 0.769 + 0.130 + 0.812(predinc) - 40.457(predinc2) +     2.377(newtreat:predinc) + 292.215(newtreat:predinc2)
+f) scg7 = 0.769 + 0.812(predinc) -40.457(predinc2)
+
+
+
+
+
+\pagebreak
+
+
+## **Question: How narrow is the "bandwidth" used by the authors. Why does this matter? Check that the results are robust to a narrower bandwidth. **
+
+**Code:**
+```{r results='asis'}
+bandwidth <- 0.03
+narrow<- panes %>% filter(predinc >= (c-bandwidth) & predinc <= (c+bandwidth))
+m2<-lm(data=narrow, scg7_norm~newtreat)
+m3<- felm(scg7_norm~ newtreat + predinc + newtreat*predinc, narrow)
+m4<- felm(scg7_norm ~ newtreat + predinc+ predinc2+ newtreat*predinc*predinc2,narrow)
+stargazer(m2,m3,m4, type="latex", header = T, 
+           omit.stat= c("f", "ser"))
+
+```
+
+
+**Answer:**
+The authors bandwidth is 0.04 it ranges from (-0.02, 0.02). 
+
+
+\pagebreak
+
+
+## **Question: The authors attribute these effects to the causal effect of receiving the government transfers. What is the implied assumption behind this interpretation?**
+
+**Answer:**
+The implied assumption is that of continuity. The authors assume that had panes not been distributed support for government would be continuous with the homes that did not recieve panes.
+
+
+\pagebreak
+
+
+## **Question: What evidence do they provide to support this assumption?**
+
+**Answer:**
+The evidence is demonstrated in the discontinuity of the graphs and of stated explicitly in the regressions
+
+\pagebreak
+
+
+## **Question: Was this threshold eligibility score specifically designed for this particular program? Why does this matter?**
+
+**Answer:**
+this matters because if other effects occurred at this threshold, researchers could not be sure that they were truly capturing the effect of panes. They would likely be diluting their estimate with the effect of other forces at this threshold. The threshold was designed for this particular program.
+
+\pagebreak
+
+
+
+
+
+
+
